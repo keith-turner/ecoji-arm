@@ -26,8 +26,7 @@ int ecoji_encode(const uint8_t *input, int input_len, char *output) {
   uint64_t bits;
 
   for (int i = 0; i < whole5_len; i += 5) {
-    bits = ((uint64_t)input[i]) << 32 | ((uint64_t)input[i + 1]) << 24 |
-           input[i + 2] << 16 | input[i + 3] << 8 | input[i + 4];
+    bits = ((uint64_t)input[i]) << 32 | ntohl(*((uint32_t *)(&input[i+1])));
     oidx = append(output, oidx, emojisV2[0x03ff & (bits >> 30)]);
     oidx = append(output, oidx, emojisV2[0x03ff & (bits >> 20)]);
     oidx = append(output, oidx, emojisV2[0x03ff & (bits >> 10)]);
