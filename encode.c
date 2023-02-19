@@ -1,5 +1,6 @@
 #include <stdint.h>
 #include <stdio.h>
+#include <arpa/inet.h>
 
 #include "mapping.h"
 
@@ -10,14 +11,11 @@ int append(char *output, int idx, uint64_t emoji) {
     output[idx++] = 0xff & (emoji >> 16);
     output[idx++] = 0xff & (emoji >> 8);
     output[idx++] = 0xff & (emoji);
+    return idx;
   } else {
-    output[idx++] = 0xff & (emoji >> 24);
-    output[idx++] = 0xff & (emoji >> 16);
-    output[idx++] = 0xff & (emoji >> 8);
-    output[idx++] = 0xff & (emoji);
+    *((uint32_t *)(&output[idx])) = htonl(emoji);
+    return idx+4;
   }
-
-  return idx;
 }
 
 int ecoji_encode(const uint8_t *input, int input_len, char *output) {
