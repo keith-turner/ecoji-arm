@@ -59,35 +59,7 @@ int encode() {
   return 0;
 }
 
-int decode() {
-  char input[400000];
-  char output[100000];
-  char uncomsumed[4];
-  int uclen = 0;
-
-  int num_read;
-  while ((num_read = readFully(input + uclen, 400000 - uclen)) > 0) {
-
-    // fprintf(stderr, "num_read %d %d\n", num_read, uclen);
-
-    int output_len =
-        ecoji_decode(input, num_read + uclen, output, uncomsumed, &uclen);
-    if (output_len == -1) {
-      return -1;
-    }
-    writeFully(output, output_len);
-
-    // fprintf(stderr, "unclen %d\n", uclen);
-
-    for (int i = 0; i < uclen; i++) {
-      input[i] = uncomsumed[i];
-    }
-  }
-
-  // TODO handle uclen > 0
-
-  return 0;
-}
+int decode() { ecoji_decode(stdin, stdout); }
 
 int main(int argc, char *argv[]) {
   int opt;

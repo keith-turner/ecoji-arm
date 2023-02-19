@@ -3389,10 +3389,10 @@ func printDecoderSub(prefix string, depth int32, spacer string) {
 
 	if count == 1 {
 		if lastKey == prefix {
-			fmt.Printf("%sreturn 0x%02x%02x%02x%04x;\n", spacer, depth, lastInfo.version, uint8(lastInfo.padding), lastInfo.ordinal)
+			fmt.Printf("%sreturn 0x%02x%02x%04x;\n", spacer, lastInfo.version, uint8(lastInfo.padding), lastInfo.ordinal)
 		} else if len(prefix)+1 == len(lastKey) {
-			fmt.Printf("%sif(input[idx+%d] == 0x%x){\n", spacer, depth, ([]byte(lastKey))[depth])
-			fmt.Printf("%s  return 0x%02x%02x%02x%04x;\n", spacer, depth+1, lastInfo.version, uint8(lastInfo.padding), lastInfo.ordinal)
+			fmt.Printf("%sif(ecoji_getc(infp) == 0x%x){\n", spacer, ([]byte(lastKey))[depth])
+			fmt.Printf("%s  return 0x%02x%02x%04x;\n", spacer, lastInfo.version, uint8(lastInfo.padding), lastInfo.ordinal)
 			fmt.Printf("%s}else{return -1;}\n", spacer)
 		} else {
 			panic("unhandled case")
@@ -3401,7 +3401,7 @@ func printDecoderSub(prefix string, depth int32, spacer string) {
 	} else if count > 1 {
 		seen := map[byte]bool{}
 
-		fmt.Printf("%sswitch(input[idx+%d]){\n", spacer, depth)
+		fmt.Printf("%sswitch(ecoji_getc(infp)){\n", spacer)
 		for r, _ := range revEmojis {
 			rs := string(r)
 			if strings.HasPrefix(rs, prefix) {
@@ -3429,10 +3429,13 @@ func printDecoderSub(prefix string, depth int32, spacer string) {
 }
 
 func printDecoder() {
-	fmt.Println("int64_t ecoji_decode_emoji(const uint8_t* input, int idx) {")
-	fmt.Println("  if(input[idx] == 0xf0 && input[idx+1]==0x9f){")
+
+	fmt.Println("int ecoji_getc(FILE *infp) { int c = getc_unlocked(infp);  while(c == '\\n' || c=='\\r'){c = getc_unlocked(infp);} return c;}")
+	fmt.Println("int64_t ecoji_decode_emoji(FILE *infp) {")
+	fmt.Println("  int c = ecoji_getc(infp);")
+	fmt.Println("  if(c == 0xf0 && ecoji_getc(infp)==0x9f){")
 	printDecoderSub(string([]byte{0xf0, 0x9f}), 2, "    ")
-	fmt.Println("  } else if(input[idx] == 0xe2){")
+	fmt.Println("  } else if(c == 0xe2){")
 	printDecoderSub(string([]byte{0xe2}), 1, "    ")
 	fmt.Println("  }else{return -1;}")
 	fmt.Println("}")

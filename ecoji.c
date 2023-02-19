@@ -77,41 +77,31 @@ int ecoji_encode_v2(const uint8_t *input, int input_len, char *output) {
   return ecoji_encode(emojisV2, paddingLastV2, input, input_len, output);
 }
 
-int ecoji_decode(const char *input, int input_len, char *output,
-                 char *uncomsumed, int *uclen) {
+int ecoji_decode(FILE *infp, FILE *outfp) {
   int idx = 0;
-  int oidx = 0;
 
-  while (idx + 16 < input_len) {
-    int64_t d1 = ecoji_decode_emoji(input, idx);
+  while (1) {
+    int64_t d1 = ecoji_decode_emoji(infp);
     if (d1 == -1) {
-      fprintf(stderr, "failed to decode : %x %x %x %x %x\n", idx,
-              0xff & input[idx], 0xff & input[idx + 1], 0xff & input[idx + 2],
-              0xff & input[idx + 3]);
-      return -1;
+      if (feof(infp) != 0) {
+        return -1;
+      } else {
+        return 0;
+      }
     }
     idx += d1 >> 32;
-    int64_t d2 = ecoji_decode_emoji(input, idx);
+    int64_t d2 = ecoji_decode_emoji(infp);
     if (d2 == -1) {
-      fprintf(stderr, "failed to decode : %x %x %x %x %x\n", idx,
-              0xff & input[idx], 0xff & input[idx + 1], 0xff & input[idx + 2],
-              0xff & input[idx + 3]);
       return -1;
     }
     idx += d2 >> 32;
-    int64_t d3 = ecoji_decode_emoji(input, idx);
+    int64_t d3 = ecoji_decode_emoji(infp);
     if (d3 == -1) {
-      fprintf(stderr, "failed to decode : %x %x %x %x %x\n", idx,
-              0xff & input[idx], 0xff & input[idx + 1], 0xff & input[idx + 2],
-              0xff & input[idx + 3]);
       return -1;
     }
     idx += d3 >> 32;
-    int64_t d4 = ecoji_decode_emoji(input, idx);
+    int64_t d4 = ecoji_decode_emoji(infp);
     if (d4 == -1) {
-      fprintf(stderr, "failed to decode : %x %x %x %x %x\n", idx,
-              0xff & input[idx], 0xff & input[idx + 1], 0xff & input[idx + 2],
-              0xff & input[idx + 3]);
       return -1;
     }
     idx += d4 >> 32;
@@ -119,52 +109,11 @@ int ecoji_decode(const char *input, int input_len, char *output,
     uint64_t bits = (0x3ff & d1) << 30 | (0x3ff & d2) << 20 |
                     (0x3ff & d3) << 10 | 0x3ff & d4;
 
-    output[oidx] = 0xff & (bits >> 32);
-    *((uint32_t *)(&output[oidx + 1])) = ntohl(bits);
-    oidx += 5;
+    unsigned char output[5];
+    output[0] = 0xff & (bits >> 32);
+    *((uint32_t *)(&output[1])) = ntohl(bits);
+    if (fwrite_unlocked(output, 1, 5, outfp) != 5) {
+      return -1;
+    }
   }
-
-  if (idx + 12 < input_len) {
-    // try to decode the last bit
-    int idx2 = idx;
-
-    int64_t d1 = ecoji_decode_emoji(input, idx2);
-    if (d1 == -1) {
-      goto skip;
-    }
-    idx2 += d1 >> 32;
-    int64_t d2 = ecoji_decode_emoji(input, idx2);
-    if (d2 == -1) {
-      goto skip;
-    }
-    idx2 += d2 >> 32;
-    int64_t d3 = ecoji_decode_emoji(input, idx2);
-    if (d3 == -1 || idx2 + 3 >= input_len) {
-      goto skip;
-    }
-    idx2 += d3 >> 32;
-    int64_t d4 = ecoji_decode_emoji(input, idx2);
-    if (d4 == -1) {
-      goto skip;
-    }
-    idx2 += d4 >> 32;
-
-    uint64_t bits = (0x3ff & d1) << 30 | (0x3ff & d2) << 20 |
-                    (0x3ff & d3) << 10 | 0x3ff & d4;
-
-    output[oidx] = 0xff & (bits >> 32);
-    *((uint32_t *)(&output[oidx + 1])) = ntohl(bits);
-    oidx += 5;
-
-    idx = idx2;
-  }
-
-skip:
-
-  *uclen = input_len - idx;
-  for (int i = 0; i < *uclen; i++) {
-    uncomsumed[i] = input[idx + i];
-  }
-
-  return oidx;
 }
