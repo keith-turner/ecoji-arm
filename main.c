@@ -49,7 +49,7 @@ int main() {
 
   int num_read;
   while ((num_read = readFully(input, 100000)) > 0) {
-    int output_len = ecoji_encode(input, num_read, output);
+    int output_len = ecoji_encode_v2(input, num_read, output);
     writeFully(output, output_len);
   }
 
