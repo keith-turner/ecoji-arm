@@ -3375,21 +3375,27 @@ func printRunes(name string, runes []rune) {
 func printDecoderSub(prefix string, depth int32, spacer string) {
 	count := 0
 
-	var lastKey string;
-	var lastInfo emojiInfo;
+	var lastKey string
+	var lastInfo emojiInfo
 
 	for r, info := range revEmojis {
 		rs := string(r)
 		if strings.HasPrefix(rs, prefix) {
-			lastKey = rs;
-			lastInfo = info;
+			lastKey = rs
+			lastInfo = info
 			count++
 		}
 	}
 
 	if count == 1 {
-		if(lastKey == prefix) {
-			fmt.Printf("%sreturn 0x%02x%02x%02x%04x;\n", spacer, depth, lastInfo.version, uint8(lastInfo.padding), lastInfo.ordinal);
+		if lastKey == prefix {
+			fmt.Printf("%sreturn 0x%02x%02x%02x%04x;\n", spacer, depth, lastInfo.version, uint8(lastInfo.padding), lastInfo.ordinal)
+		} else if len(prefix)+1 == len(lastKey) {
+			fmt.Printf("%sif(input[idx+%d] == 0x%x){\n", spacer, depth, ([]byte(lastKey))[depth])
+			fmt.Printf("%s  return 0x%02x%02x%02x%04x;\n", spacer, depth+1, lastInfo.version, uint8(lastInfo.padding), lastInfo.ordinal)
+			fmt.Printf("%s}else{return -1;}\n", spacer)
+		} else {
+			panic("unhandled case")
 		}
 
 	} else if count > 1 {
@@ -3404,7 +3410,7 @@ func printDecoderSub(prefix string, depth int32, spacer string) {
 				if !seen[c] {
 					fmt.Printf("%s  case 0x%x:\n", spacer, c)
 
-					printDecoderSub(prefix+string([]byte{c}), depth+1, spacer+"    ");
+					printDecoderSub(prefix+string([]byte{c}), depth+1, spacer+"    ")
 
 					//fmt.Printf("%s    break;\n", spacer)
 					seen[c] = true
@@ -3417,20 +3423,19 @@ func printDecoderSub(prefix string, depth int32, spacer string) {
 		fmt.Printf("%s}\n", spacer)
 
 	} else {
-		panic("nothing seen for prefix "+hex.EncodeToString([]byte(prefix)))
+		panic("nothing seen for prefix " + hex.EncodeToString([]byte(prefix)))
 	}
 
 }
 
 func printDecoder() {
-	fmt.Println("int64_t decode(const uint8_t* input, int idx) {")
+	fmt.Println("int64_t ecoji_decode_emoji(const uint8_t* input, int idx) {")
 	fmt.Println("  if(input[idx] == 0xf0 && input[idx+1]==0x9f){")
 	printDecoderSub(string([]byte{0xf0, 0x9f}), 2, "    ")
 	fmt.Println("  } else if(input[idx] == 0xe2){")
 	printDecoderSub(string([]byte{0xe2}), 1, "    ")
 	fmt.Println("  }else{return -1;}")
 	fmt.Println("}")
-
 }
 
 func main() {
