@@ -77,16 +77,16 @@ int ecoji_encode_v2(const uint8_t *input, int input_len, char *output) {
   return ecoji_encode(emojisV2, paddingLastV2, input, input_len, output);
 }
 
-int isPadding(int64_t d) { return (0xff & (d >> 16)) == 1; }
+int isPadding(int64_t d) { return (0x0f & (d >> 12)) == 1; }
 
-int isLastPadding(int64_t d) { return (0xff & (d >> 16)) == 2; }
+int isLastPadding(int64_t d) { return (0x0f & (d >> 12)) == 2; }
 
 int ecoji_decode(FILE *infp, FILE *outfp) {
 
   while (1) {
 
     int sawErr = 0;
-    int64_t d1 = ecoji_decode_emoji(infp);
+    int32_t d1 = ecoji_decode_emoji(infp);
     if (d1 < 0) {
       if (feof(infp) == 0) {
         return -1;
@@ -99,7 +99,7 @@ int ecoji_decode(FILE *infp, FILE *outfp) {
 
     int sawPadding = 0;
 
-    int64_t d2 = ecoji_decode_emoji(infp);
+    int32_t d2 = ecoji_decode_emoji(infp);
     if (d2 < 0) {
       if (d2 == -1) {
         return -1;
@@ -108,7 +108,7 @@ int ecoji_decode(FILE *infp, FILE *outfp) {
       sawPadding = 1;
     }
 
-    int64_t d3 = ecoji_decode_emoji(infp);
+    int32_t d3 = ecoji_decode_emoji(infp);
     if (d3 < 0) {
       if (d3 == -1 && feof(infp) == 0) {
         return -1;
@@ -117,7 +117,7 @@ int ecoji_decode(FILE *infp, FILE *outfp) {
       sawPadding = 1;
     }
 
-    int64_t d4 = ecoji_decode_emoji(infp);
+    int32_t d4 = ecoji_decode_emoji(infp);
     if (d4 < 0) {
       if (d4 == -1 && feof(infp) == 0) {
         return -1;
@@ -140,8 +140,9 @@ int ecoji_decode(FILE *infp, FILE *outfp) {
       }
     }
 
-    uint64_t bits = (0x3ff & d1) << 30 | (0x3ff & d2) << 20 |
-                    (0x3ff & d3) << 10 | 0x3ff & d4;
+    uint64_t bits = (0x3ff & (uint64_t)d1) << 30 |
+                    (0x3ff & (uint64_t)d2) << 20 |
+                    (0x3ff & (uint64_t)d3) << 10 | 0x3ff & (uint64_t)d4;
 
     unsigned char output[5];
     output[0] = 0xff & (bits >> 32);

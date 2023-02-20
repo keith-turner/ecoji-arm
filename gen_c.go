@@ -3372,6 +3372,85 @@ func printRunes(name string, runes []rune) {
 	fmt.Println("};")
 }
 
+func encodeEI(info emojiInfo) uint32 {
+	encinfo := uint32(0x0f & info.version) << 16 | uint32(0x0f & info.padding) << 12  | uint32(0xfff & info.ordinal);
+
+	if info.padding != padNone {
+		encinfo |= 0x80 << 24;
+	}
+
+	return encinfo
+}
+
+func getSuffixes(prefix string) ([]int, map[int]emojiInfo) {
+
+	var seen [256*256]bool
+	infos := map[int]emojiInfo{}
+
+	for r, info := range revEmojis {
+		rs := string(r)
+		if strings.HasPrefix(rs, prefix) {
+			if len(rs) != len(prefix)+2 {
+				panic("suffix not len 2 ")
+			}
+			bytes := ([]byte(rs))[len(prefix):]
+			suffix := int(0xff&bytes[0])<<8 | int(0xff&bytes[1])
+
+			seen[suffix] = true
+			infos[suffix] = info
+		}
+	}
+
+	points := make([]int, 0, 2000);
+
+	for i, b := range seen {
+		if(b){
+			points = append(points, i)
+		}
+	}
+
+	return points, infos;
+}
+
+func printDecoderArray_f09f()  {
+
+	points,infos := getSuffixes(string([]byte{0xf0, 0x9f}))
+
+	max := points[len(points)-1] - points[0]+1;
+	data := make([]uint32, points[len(points)-1] - points[0]+1)
+
+	for i := 0; i < len(data); i++ {
+		data[i] = 0xffffffff
+	}
+
+	fmt.Printf("const int decodeMin_f09f = %d;",points[0])
+	fmt.Printf("const int decodeSize_f09f = %d;",max)
+
+	fmt.Println("const int32_t decodeLookup_f09f[] = {")
+
+	for _, point := range points {
+		idx := point-points[0]
+		if data[idx] != 0xffffffff {
+			panic("collision")
+		}
+		data[(point-points[0])] = encodeEI(infos[point])
+	}
+
+	for _, datum := range data {
+		fmt.Printf("0x%08x,\n",datum);
+	}
+
+	fmt.Println("};");
+
+}
+
+func printDecoderLookup_f09f(spacer string)  {
+	fmt.Printf("%sint suffix = ((0xff & ecoji_getc(infp)) << 8) | (0xff & ecoji_getc(infp));\n", spacer)
+	fmt.Printf("%sint index = (suffix - decodeMin_f09f);\n", spacer)
+	fmt.Printf("%sif(index < 0 || index >=decodeSize_f09f) {return -1;}\n", spacer)
+	fmt.Printf("%sreturn decodeLookup_f09f[index];\n", spacer)
+}
+
 func printDecoderSub(prefix string, depth int32, spacer string) {
 	count := 0
 
@@ -3389,17 +3468,13 @@ func printDecoderSub(prefix string, depth int32, spacer string) {
 
 	if count == 1 {
 		
-		encinfo := uint64(0xff & lastInfo.version) << 24 | uint64(0xff & lastInfo.padding) << 16  | uint64(0xffff & lastInfo.ordinal);
-
-		if(lastInfo.padding != padNone) {
-			encinfo |= (0x80 << 56);
-		}
+		encinfo := encodeEI(lastInfo)
 
 		if lastKey == prefix {	
-			fmt.Printf("%sreturn 0x%016x;\n", spacer, encinfo)
+			fmt.Printf("%sreturn 0x%08x;\n", spacer, encinfo)
 		} else if len(prefix)+1 == len(lastKey) {
 			fmt.Printf("%sif(ecoji_getc(infp) == 0x%x){\n", spacer, ([]byte(lastKey))[depth])
-			fmt.Printf("%s  return 0x%016x;\n", spacer, encinfo)
+			fmt.Printf("%s  return 0x%08x;\n", spacer, encinfo)
 			fmt.Printf("%s}else{return -1;}\n", spacer)
 		} else {
 			panic("unhandled case")
@@ -3437,12 +3512,14 @@ func printDecoderSub(prefix string, depth int32, spacer string) {
 
 func printDecoder() {
 
+	printDecoderArray_f09f();
+
 	fmt.Println("int ecoji_getc(FILE *infp) { int c = getc_unlocked(infp);  while(c == '\\n' || c=='\\r'){c = getc_unlocked(infp);} return c;}")
 	fmt.Println();
-	fmt.Println("int64_t ecoji_decode_emoji(FILE *infp) {")
+	fmt.Println("int32_t ecoji_decode_emoji(FILE *infp) {")
 	fmt.Println("  int c = ecoji_getc(infp);")
 	fmt.Println("  if(c == 0xf0 && ecoji_getc(infp)==0x9f){")
-	printDecoderSub(string([]byte{0xf0, 0x9f}), 2, "    ")
+	printDecoderLookup_f09f( "    ")
 	fmt.Println("  } else if(c == 0xe2){")
 	printDecoderSub(string([]byte{0xe2}), 1, "    ")
 	fmt.Println("  }else{return -1;}")
