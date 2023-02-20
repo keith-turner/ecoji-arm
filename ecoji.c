@@ -87,7 +87,7 @@ int ecoji_decode(FILE *infp, FILE *outfp) {
 
     int sawErr = 0;
     int64_t d1 = ecoji_decode_emoji(infp);
-    if (d1 == -1) {
+    if (d1 < 0) {
       if (feof(infp) == 0) {
         return -1;
       } else {
@@ -97,35 +97,47 @@ int ecoji_decode(FILE *infp, FILE *outfp) {
 
     // TODO check for padding
 
+    int sawPadding = 0;
+
     int64_t d2 = ecoji_decode_emoji(infp);
-    if (d2 == -1) {
-      return -1;
+    if (d2 < 0) {
+      if (d2 == -1) {
+        return -1;
+      }
+
+      sawPadding = 1;
     }
 
     int64_t d3 = ecoji_decode_emoji(infp);
-    if (d3 == -1) {
-      if (feof(infp) == 0) {
+    if (d3 < 0) {
+      if (d3 == -1 && feof(infp) == 0) {
         return -1;
       }
+
+      sawPadding = 1;
     }
 
     int64_t d4 = ecoji_decode_emoji(infp);
-    if (d4 == -1) {
-      if (feof(infp) == 0) {
+    if (d4 < 0) {
+      if (d4 == -1 && feof(infp) == 0) {
         return -1;
       }
+
+      sawPadding = 1;
     }
 
     int len = 5;
 
-    if (isPadding(d2)) {
-      len = 1;
-    } else if (isPadding(d3)) {
-      len = 2;
-    } else if (isPadding(d4)) {
-      len = 3;
-    } else if (isLastPadding(d4)) {
-      len = 4;
+    if (sawPadding) {
+      if (isPadding(d2)) {
+        len = 1;
+      } else if (isPadding(d3)) {
+        len = 2;
+      } else if (isPadding(d4)) {
+        len = 3;
+      } else if (isLastPadding(d4)) {
+        len = 4;
+      }
     }
 
     uint64_t bits = (0x3ff & d1) << 30 | (0x3ff & d2) << 20 |

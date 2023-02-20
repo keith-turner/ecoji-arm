@@ -3388,11 +3388,18 @@ func printDecoderSub(prefix string, depth int32, spacer string) {
 	}
 
 	if count == 1 {
-		if lastKey == prefix {
-			fmt.Printf("%sreturn 0x%02x%02x%04x;\n", spacer, lastInfo.version, uint8(lastInfo.padding), lastInfo.ordinal)
+		
+		encinfo := uint64(0xff & lastInfo.version) << 24 | uint64(0xff & lastInfo.padding) << 16  | uint64(0xffff & lastInfo.ordinal);
+
+		if(lastInfo.padding != padNone) {
+			encinfo |= (0x80 << 56);
+		}
+
+		if lastKey == prefix {	
+			fmt.Printf("%sreturn 0x%016x;\n", spacer, encinfo)
 		} else if len(prefix)+1 == len(lastKey) {
 			fmt.Printf("%sif(ecoji_getc(infp) == 0x%x){\n", spacer, ([]byte(lastKey))[depth])
-			fmt.Printf("%s  return 0x%02x%02x%04x;\n", spacer, lastInfo.version, uint8(lastInfo.padding), lastInfo.ordinal)
+			fmt.Printf("%s  return 0x%016x;\n", spacer, encinfo)
 			fmt.Printf("%s}else{return -1;}\n", spacer)
 		} else {
 			panic("unhandled case")
@@ -3431,6 +3438,7 @@ func printDecoderSub(prefix string, depth int32, spacer string) {
 func printDecoder() {
 
 	fmt.Println("int ecoji_getc(FILE *infp) { int c = getc_unlocked(infp);  while(c == '\\n' || c=='\\r'){c = getc_unlocked(infp);} return c;}")
+	fmt.Println();
 	fmt.Println("int64_t ecoji_decode_emoji(FILE *infp) {")
 	fmt.Println("  int c = ecoji_getc(infp);")
 	fmt.Println("  if(c == 0xf0 && ecoji_getc(infp)==0x9f){")
@@ -3463,6 +3471,8 @@ func main() {
 
 	printRunes("emojisV1", emojisV1[:])
 	printRunes("emojisV2", emojisV2[:])
+
+	fmt.Println()
 
 	printDecoder()
 
