@@ -2,7 +2,7 @@
 #include <stdint.h>
 #include <stdio.h>
 
-#include "mapping.h"
+#include "ecoji_generated.h"
 
 int append(char *output, int idx, uint64_t emoji) {
   int len = emoji >> 56;
