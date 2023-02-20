@@ -77,34 +77,56 @@ int ecoji_encode_v2(const uint8_t *input, int input_len, char *output) {
   return ecoji_encode(emojisV2, paddingLastV2, input, input_len, output);
 }
 
+int isPadding(int64_t d) { return (0xff & (d >> 16)) == 1; }
+
+int isLastPadding(int64_t d) { return (0xff & (d >> 16)) == 2; }
+
 int ecoji_decode(FILE *infp, FILE *outfp) {
-  int idx = 0;
 
   while (1) {
+
+    int sawErr = 0;
     int64_t d1 = ecoji_decode_emoji(infp);
     if (d1 == -1) {
-      if (feof(infp) != 0) {
+      if (feof(infp) == 0) {
         return -1;
       } else {
         return 0;
       }
     }
-    idx += d1 >> 32;
+
+    // TODO check for padding
+
     int64_t d2 = ecoji_decode_emoji(infp);
     if (d2 == -1) {
       return -1;
     }
-    idx += d2 >> 32;
+
     int64_t d3 = ecoji_decode_emoji(infp);
     if (d3 == -1) {
-      return -1;
+      if (feof(infp) == 0) {
+        return -1;
+      }
     }
-    idx += d3 >> 32;
+
     int64_t d4 = ecoji_decode_emoji(infp);
     if (d4 == -1) {
-      return -1;
+      if (feof(infp) == 0) {
+        return -1;
+      }
     }
-    idx += d4 >> 32;
+
+    int len = 5;
+
+    if (isPadding(d2)) {
+      len = 1;
+    } else if (isPadding(d3)) {
+      len = 2;
+    } else if (isPadding(d4)) {
+      len = 3;
+    } else if (isLastPadding(d4)) {
+      len = 4;
+    }
 
     uint64_t bits = (0x3ff & d1) << 30 | (0x3ff & d2) << 20 |
                     (0x3ff & d3) << 10 | 0x3ff & d4;
@@ -112,7 +134,7 @@ int ecoji_decode(FILE *infp, FILE *outfp) {
     unsigned char output[5];
     output[0] = 0xff & (bits >> 32);
     *((uint32_t *)(&output[1])) = ntohl(bits);
-    if (fwrite_unlocked(output, 1, 5, outfp) != 5) {
+    if (fwrite_unlocked(output, 1, len, outfp) != 5) {
       return -1;
     }
   }
