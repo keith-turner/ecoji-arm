@@ -140,9 +140,20 @@ int ecoji_decode(FILE *infp, FILE *outfp) {
       }
     }
 
+#ifdef ARM_ASM
+    uint64_t bits;
+    __asm("UBFIZ %[output],%[input_d1],30,10\n\t"
+          "BFI %[output],%[input_d2],20,10\n\t"
+          "BFI %[output],%[input_d3],10,10\n\t"
+          "BFI %[output],%[input_d4],0,10"
+          : [output] "=r"(bits)
+          : [input_d1] "r"(d1), [input_d2] "r"(d2), [input_d3] "r"(d3),
+            [input_d4] "r"(d4));
+#else
     uint64_t bits = (0x3ff & (uint64_t)d1) << 30 |
                     (0x3ff & (uint64_t)d2) << 20 |
                     (0x3ff & (uint64_t)d3) << 10 | 0x3ff & (uint64_t)d4;
+#endif
 
     unsigned char output[5];
     output[0] = 0xff & (bits >> 32);
