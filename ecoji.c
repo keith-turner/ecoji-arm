@@ -3,43 +3,47 @@
 
 #include "ecoji_generated.h"
 
-// TODO these vars are a hack, not thread safe
-int _wrap = 72;
-int emojis_output = 0;
-int ecoji_vers = 2;
+typedef struct {
+  char *output;
+  int _wrap;
+  int emojis_output;
+  int idx;
+  int ecoji_vers;
+  int wrap;
+} ecoji_encode_state;
 
-int append(char *output, int idx, uint64_t emoji) {
+void append(ecoji_encode_state *state, uint64_t emoji) {
   int len = emoji >> 56;
 
   if (len == 3) {
-    output[idx++] = 0xff & (emoji >> 16);
-    output[idx++] = 0xff & (emoji >> 8);
-    output[idx++] = 0xff & (emoji);
-    if (_wrap > 0) {
-      emojis_output++;
-      if (emojis_output >= _wrap) {
-        output[idx++] = '\n';
-        emojis_output = 0;
+    state->output[state->idx++] = 0xff & (emoji >> 16);
+    state->output[state->idx++] = 0xff & (emoji >> 8);
+    state->output[state->idx++] = 0xff & (emoji);
+    if (state->_wrap > 0) {
+      state->emojis_output++;
+      if (state->emojis_output >= state->_wrap) {
+        state->output[state->idx++] = '\n';
+        state->emojis_output = 0;
       }
     }
-    return idx;
   } else {
-    *((uint32_t *)(&output[idx])) = htonl(emoji);
-    if (_wrap > 0) {
-      emojis_output++;
-      if (emojis_output >= _wrap) {
-        output[idx + 4] = '\n';
-        emojis_output = 0;
-        return idx + 5;
+    *((uint32_t *)(&(state->output[state->idx]))) = htonl(emoji);
+    if (state->_wrap > 0) {
+      state->emojis_output++;
+      if (state->emojis_output >= state->_wrap) {
+        state->output[state->idx + 4] = '\n';
+        state->emojis_output = 0;
+        state->idx += 5;
+        return;
       }
     }
-    return idx + 4;
+    state->idx += 4;
   }
 }
 
 int ecoji_encode(const int64_t *emojis, const int64_t *paddingLast,
-                 const uint8_t *input, int input_len, char *output) {
-  int oidx = 0;
+                 const uint8_t *input, int input_len, char *output,
+                 ecoji_encode_state *state) {
 
   int whole5_len = (input_len / 5) * 5;
 
@@ -47,10 +51,10 @@ int ecoji_encode(const int64_t *emojis, const int64_t *paddingLast,
 
   for (int i = 0; i < whole5_len; i += 5) {
     bits = ((uint64_t)input[i]) << 32 | ntohl(*((uint32_t *)(&input[i + 1])));
-    oidx = append(output, oidx, emojis[0x03ff & (bits >> 30)]);
-    oidx = append(output, oidx, emojis[0x03ff & (bits >> 20)]);
-    oidx = append(output, oidx, emojis[0x03ff & (bits >> 10)]);
-    oidx = append(output, oidx, emojis[0x03ff & bits]);
+    append(state, emojis[0x03ff & (bits >> 30)]);
+    append(state, emojis[0x03ff & (bits >> 20)]);
+    append(state, emojis[0x03ff & (bits >> 10)]);
+    append(state, emojis[0x03ff & bits]);
   }
 
   int left = input_len - whole5_len;
@@ -59,40 +63,40 @@ int ecoji_encode(const int64_t *emojis, const int64_t *paddingLast,
 
   switch (left) {
   case 1:
-    oidx = append(output, oidx, emojis[input[i] << 2]);
-    oidx = append(output, oidx, padding);
-    if (ecoji_vers == 1) {
-      oidx = append(output, oidx, padding);
-      oidx = append(output, oidx, padding);
+    append(state, emojis[input[i] << 2]);
+    append(state, padding);
+    if (state->ecoji_vers == 1) {
+      append(state, padding);
+      append(state, padding);
     }
     break;
   case 2:
     bits = input[i] << 12 | input[i + 1] << 4;
-    oidx = append(output, oidx, emojis[bits >> 10]);
-    oidx = append(output, oidx, emojis[0x03ff & bits]);
-    oidx = append(output, oidx, padding);
-    if (ecoji_vers == 1) {
-      oidx = append(output, oidx, padding);
+    append(state, emojis[bits >> 10]);
+    append(state, emojis[0x03ff & bits]);
+    append(state, padding);
+    if (state->ecoji_vers == 1) {
+      append(state, padding);
     }
     break;
   case 3:
     bits = input[i] << 22 | input[i + 1] << 14 | input[i + 2] << 6;
-    oidx = append(output, oidx, emojis[0x03ff & (bits >> 20)]);
-    oidx = append(output, oidx, emojis[0x03ff & (bits >> 10)]);
-    oidx = append(output, oidx, emojis[0x03ff & bits]);
-    oidx = append(output, oidx, padding);
+    append(state, emojis[0x03ff & (bits >> 20)]);
+    append(state, emojis[0x03ff & (bits >> 10)]);
+    append(state, emojis[0x03ff & bits]);
+    append(state, padding);
     break;
   case 4:
     bits = ((uint64_t)input[i]) << 32 | ((uint64_t)input[i + 1]) << 24 |
            input[i + 2] << 16 | input[i + 3] << 8;
-    oidx = append(output, oidx, emojis[bits >> 30]);
-    oidx = append(output, oidx, emojis[0x03ff & (bits >> 20)]);
-    oidx = append(output, oidx, emojis[0x03ff & (bits >> 10)]);
-    oidx = append(output, oidx, paddingLast[0x03 & (bits >> 8)]);
+    append(state, emojis[bits >> 30]);
+    append(state, emojis[0x03ff & (bits >> 20)]);
+    append(state, emojis[0x03ff & (bits >> 10)]);
+    append(state, paddingLast[0x03 & (bits >> 8)]);
     break;
   }
 
-  return oidx;
+  return state->idx;
 }
 
 int readFully(FILE *infp, char *buf, int len) {
@@ -139,17 +143,27 @@ int writeFully(FILE *outfp, char *buf, int len) {
 }
 
 int encode_buffered(const int64_t *emojis, const int64_t *paddingLast,
-                    FILE *infp, FILE *outfp) {
+                    FILE *infp, FILE *outfp, int ecoji_vers, int wrap) {
+
   char input[100000];
   char output[500000];
 
+  ecoji_encode_state state;
+  state.emojis_output = 0;
+  state.output = output;
+  state._wrap = wrap;
+  state.idx = 0;
+  state.ecoji_vers = ecoji_vers;
+
   int num_read;
   while ((num_read = readFully(infp, input, 100000)) > 0) {
-    int output_len = ecoji_encode(emojis, paddingLast, input, num_read, output);
+    int output_len =
+        ecoji_encode(emojis, paddingLast, input, num_read, output, &state);
     writeFully(outfp, output, output_len);
+    state.idx = 0;
   }
 
-  if (_wrap > 0 && emojis_output > 0) {
+  if (state._wrap > 0 && state.emojis_output > 0) {
     putc('\n', outfp);
   }
 
@@ -157,26 +171,42 @@ int encode_buffered(const int64_t *emojis, const int64_t *paddingLast,
 }
 
 int ecoji_encode_v1(FILE *infp, FILE *outfp, int wrap) {
-  _wrap = wrap;
-  ecoji_vers = 1;
-  return encode_buffered(emojisV1, paddingLastV1, infp, outfp);
+  return encode_buffered(emojisV1, paddingLastV1, infp, outfp, 1, wrap);
 }
 
 int ecoji_encode_v2(FILE *infp, FILE *outfp, int wrap) {
-  _wrap = wrap;
-  return encode_buffered(emojisV2, paddingLastV2, infp, outfp);
+  return encode_buffered(emojisV2, paddingLastV2, infp, outfp, 2, wrap);
 }
 
 int isPadding(int64_t d) { return (0x0f & (d >> 12)) == 1; }
 
 int isLastPadding(int64_t d) { return (0x0f & (d >> 12)) == 2; }
 
+int32_t decode_and_check(FILE *infp, int32_t *expected_ver) {
+  int32_t d = ecoji_decode_emoji(infp);
+  if ((d & *expected_ver) != 0) {
+    return d;
+  } else {
+    if (*expected_ver == ECOJI_VER_ONE_AND_TWO) {
+      // this is the first time to see a version one only OR version two only
+      // emoji.  So lets add that to our expected version
+      *expected_ver = *expected_ver | ECOJI_VER_MASK & d;
+      return d;
+    } else {
+      // seeing an unexpected emoji version
+      return -1;
+    }
+  }
+}
+
 int ecoji_decode(FILE *infp, FILE *outfp) {
+
+  int32_t expected_ver = ECOJI_VER_ONE_AND_TWO;
 
   while (1) {
 
     int sawErr = 0;
-    int32_t d1 = ecoji_decode_emoji(infp);
+    int32_t d1 = decode_and_check(infp, &expected_ver);
     if (d1 < 0) {
       if (feof(infp) == 0) {
         return -1;
@@ -189,7 +219,7 @@ int ecoji_decode(FILE *infp, FILE *outfp) {
 
     int sawPadding = 0;
 
-    int32_t d2 = ecoji_decode_emoji(infp);
+    int32_t d2 = decode_and_check(infp, &expected_ver);
     if (d2 < 0) {
       if (d2 == -1) {
         return -1;
@@ -198,7 +228,7 @@ int ecoji_decode(FILE *infp, FILE *outfp) {
       sawPadding = 1;
     }
 
-    int32_t d3 = ecoji_decode_emoji(infp);
+    int32_t d3 = decode_and_check(infp, &expected_ver);
     if (d3 < 0) {
       if (d3 == -1 && feof(infp) == 0) {
         return -1;
@@ -207,7 +237,7 @@ int ecoji_decode(FILE *infp, FILE *outfp) {
       sawPadding = 1;
     }
 
-    int32_t d4 = ecoji_decode_emoji(infp);
+    int32_t d4 = decode_and_check(infp, &expected_ver);
     if (d4 < 0) {
       if (d4 == -1 && feof(infp) == 0) {
         return -1;
