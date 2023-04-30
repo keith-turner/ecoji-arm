@@ -1,8 +1,12 @@
 #include <arpa/inet.h>
-#include <stdint.h>
 #include <stdio.h>
 
 #include "ecoji_generated.h"
+
+// TODO these vars are a hack, not thread safe
+int _wrap = 72;
+int emojis_output = 0;
+int ecoji_vers = 2;
 
 int append(char *output, int idx, uint64_t emoji) {
   int len = emoji >> 56;
@@ -11,9 +15,24 @@ int append(char *output, int idx, uint64_t emoji) {
     output[idx++] = 0xff & (emoji >> 16);
     output[idx++] = 0xff & (emoji >> 8);
     output[idx++] = 0xff & (emoji);
+    if (_wrap > 0) {
+      emojis_output++;
+      if (emojis_output >= _wrap) {
+        output[idx++] = '\n';
+        emojis_output = 0;
+      }
+    }
     return idx;
   } else {
     *((uint32_t *)(&output[idx])) = htonl(emoji);
+    if (_wrap > 0) {
+      emojis_output++;
+      if (emojis_output >= _wrap) {
+        output[idx + 4] = '\n';
+        emojis_output = 0;
+        return idx + 5;
+      }
+    }
     return idx + 4;
   }
 }
@@ -42,12 +61,19 @@ int ecoji_encode(const int64_t *emojis, const int64_t *paddingLast,
   case 1:
     oidx = append(output, oidx, emojis[input[i] << 2]);
     oidx = append(output, oidx, padding);
+    if (ecoji_vers == 1) {
+      oidx = append(output, oidx, padding);
+      oidx = append(output, oidx, padding);
+    }
     break;
   case 2:
     bits = input[i] << 12 | input[i + 1] << 4;
     oidx = append(output, oidx, emojis[bits >> 10]);
     oidx = append(output, oidx, emojis[0x03ff & bits]);
     oidx = append(output, oidx, padding);
+    if (ecoji_vers == 1) {
+      oidx = append(output, oidx, padding);
+    }
     break;
   case 3:
     bits = input[i] << 22 | input[i + 1] << 14 | input[i + 2] << 6;
@@ -69,12 +95,76 @@ int ecoji_encode(const int64_t *emojis, const int64_t *paddingLast,
   return oidx;
 }
 
-int ecoji_encode_v1(const uint8_t *input, int input_len, char *output) {
-  return ecoji_encode(emojisV1, paddingLastV1, input, input_len, output);
+int readFully(FILE *infp, char *buf, int len) {
+
+  int num_read = fread(buf, 1, len, infp);
+
+  if (num_read <= 0) {
+    return num_read;
+  }
+  while (num_read < len) {
+    int tmp = fread(buf + num_read, 1, len - num_read, infp);
+    if (tmp < 0) {
+      return tmp;
+    }
+    if (tmp == 0) {
+      break;
+    }
+    num_read += tmp;
+  }
+
+  return num_read;
 }
 
-int ecoji_encode_v2(const uint8_t *input, int input_len, char *output) {
-  return ecoji_encode(emojisV2, paddingLastV2, input, input_len, output);
+int writeFully(FILE *outfp, char *buf, int len) {
+  int num_wrote = fwrite(buf, 1, len, outfp);
+  if (num_wrote <= 0) {
+    return num_wrote;
+  }
+
+  while (num_wrote < len) {
+    int tmp = fwrite(buf + num_wrote, 1, len - num_wrote, outfp);
+    if (tmp < 0) {
+      return tmp;
+    }
+
+    if (tmp == 0) {
+      break;
+    }
+
+    num_wrote += tmp;
+  }
+
+  return num_wrote;
+}
+
+int encode_buffered(const int64_t *emojis, const int64_t *paddingLast,
+                    FILE *infp, FILE *outfp) {
+  char input[100000];
+  char output[500000];
+
+  int num_read;
+  while ((num_read = readFully(infp, input, 100000)) > 0) {
+    int output_len = ecoji_encode(emojis, paddingLast, input, num_read, output);
+    writeFully(outfp, output, output_len);
+  }
+
+  if (_wrap > 0 && emojis_output > 0) {
+    putc('\n', outfp);
+  }
+
+  return 0;
+}
+
+int ecoji_encode_v1(FILE *infp, FILE *outfp, int wrap) {
+  _wrap = wrap;
+  ecoji_vers = 1;
+  return encode_buffered(emojisV1, paddingLastV1, infp, outfp);
+}
+
+int ecoji_encode_v2(FILE *infp, FILE *outfp, int wrap) {
+  _wrap = wrap;
+  return encode_buffered(emojisV2, paddingLastV2, infp, outfp);
 }
 
 int isPadding(int64_t d) { return (0x0f & (d >> 12)) == 1; }

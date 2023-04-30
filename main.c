@@ -1,80 +1,53 @@
-#include <stdbool.h>
+#include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
 
 #include "ecoji.h"
 
-int readFully(char *buf, int len) {
-  int num_read = read(STDIN_FILENO, buf, len);
-  if (num_read <= 0) {
-    return num_read;
-  }
-  while (num_read < len) {
-    int tmp = read(STDIN_FILENO, buf + num_read, len - num_read);
-    if (tmp < 0) {
-      return tmp;
-    }
-    if (tmp == 0) {
-      break;
-    }
-    num_read += tmp;
-  }
-
-  return num_read;
-}
-
-int writeFully(char *buf, int len) {
-  int num_wrote = write(STDOUT_FILENO, buf, len);
-  if (num_wrote <= 0) {
-    return num_wrote;
-  }
-
-  while (num_wrote < len) {
-    int tmp = write(STDOUT_FILENO, buf + num_wrote, len - num_wrote);
-    if (tmp < 0) {
-      return tmp;
-    }
-
-    if (tmp == 0) {
-      break;
-    }
-
-    num_wrote += tmp;
-  }
-
-  return num_wrote;
-}
-
-int encode() {
-  char input[100000];
-  char output[400000];
-
-  int num_read;
-  while ((num_read = readFully(input, 100000)) > 0) {
-    int output_len = ecoji_encode_v2(input, num_read, output);
-    writeFully(output, output_len);
-  }
-
-  return 0;
-}
-
-int decode() { ecoji_decode(stdin, stdout); }
-
 int main(int argc, char *argv[]) {
-  int opt;
-
-  if ((opt = getopt(argc, argv, "ed")) != -1) {
-    switch (opt) {
+  int wrap = 72;
+  int enc = -1;
+  int c;
+  while ((c = getopt(argc, argv, "eEdw:")) != -1) {
+    switch (c) {
     case 'e':
-      encode();
+      enc = 2;
+      break;
+    case 'E':
+      enc = 1;
       break;
     case 'd':
-      exit(decode());
+      exit(ecoji_decode(stdin, stdout));
       break;
+    case 'w':
+      errno = 0;
+      char *endptr;
+      wrap = strtol(optarg, &endptr, 10);
+      if (errno != 0) {
+        perror("strtol");
+      }
+      if (endptr == optarg || wrap < 0) {
+        fprintf(stderr, "Wrap '%s' is not a non negative integer.\n", optarg);
+        exit(EXIT_FAILURE);
+      }
+      break;
+    case '?':
+      if (optopt == 'w')
+        fprintf(stderr, "Option -%c requires an argument.\n", optopt);
+      else
+        fprintf(stderr, "Unknown option character `\\x%x'.\n", optopt);
+      return 1;
     default:
-      fprintf(stderr, "Usage: %s [-ed]\n", argv[0]);
       exit(EXIT_FAILURE);
     }
+  }
+
+  if (enc == 2) {
+    ecoji_encode_v2(stdin, stdout, wrap);
+  } else if (enc == 1) {
+    ecoji_encode_v1(stdin, stdout, wrap);
+  } else {
+    exit(EXIT_FAILURE);
   }
 }
