@@ -190,13 +190,40 @@ int32_t decode_and_check(FILE *infp, int32_t *expected_ver) {
     if (*expected_ver == ECOJI_VER_ONE_AND_TWO) {
       // this is the first time to see a version one only OR version two only
       // emoji.  So lets add that to our expected version
-      *expected_ver = *expected_ver | ECOJI_VER_MASK & d;
+      *expected_ver = *expected_ver | (ECOJI_VER_MASK & d);
       return d;
     } else {
       // seeing an unexpected emoji version
+      // TODO push back and concat may not work for ecoji 2 followed by ecoji 1
+      // because we suppress the ecoji1 here after seeing 2?
       return -1;
     }
   }
+}
+
+int push_back(FILE *infp, int32_t d) {
+  if (d == -1)
+    return -1;
+
+  int64_t emoji_info = emojisV2[0x3ff & d];
+
+  unsigned char output[4];
+
+  ecoji_encode_state state;
+  state.output = output;
+  state._wrap = 0;
+  state.idx = 0;
+
+  append(&state, emoji_info);
+
+  for (int i = state.idx - 1; i >= 0; i--) {
+    if (ungetc(output[i], infp) != output[i]) {
+      fprintf(stderr, "ungetc failed \n");
+      return -1;
+    }
+  }
+
+  return 0;
 }
 
 int ecoji_decode(FILE *infp, FILE *outfp) {
@@ -205,7 +232,6 @@ int ecoji_decode(FILE *infp, FILE *outfp) {
 
   while (1) {
 
-    int sawErr = 0;
     int32_t d1 = decode_and_check(infp, &expected_ver);
     if (d1 < 0) {
       if (feof(infp) == 0) {
@@ -215,9 +241,7 @@ int ecoji_decode(FILE *infp, FILE *outfp) {
       }
     }
 
-    // TODO check for padding
-
-    int sawPadding = 0;
+    int checksNeeded = 0;
 
     int32_t d2 = decode_and_check(infp, &expected_ver);
     if (d2 < 0) {
@@ -225,7 +249,7 @@ int ecoji_decode(FILE *infp, FILE *outfp) {
         return -1;
       }
 
-      sawPadding = 1;
+      checksNeeded = 1;
     }
 
     int32_t d3 = decode_and_check(infp, &expected_ver);
@@ -234,7 +258,7 @@ int ecoji_decode(FILE *infp, FILE *outfp) {
         return -1;
       }
 
-      sawPadding = 1;
+      checksNeeded = 1;
     }
 
     int32_t d4 = decode_and_check(infp, &expected_ver);
@@ -243,20 +267,60 @@ int ecoji_decode(FILE *infp, FILE *outfp) {
         return -1;
       }
 
-      sawPadding = 1;
+      checksNeeded = 1;
     }
 
     int len = 5;
 
-    if (sawPadding) {
+    if (checksNeeded) {
+
+      if (isLastPadding(d2) || isLastPadding(d3)) {
+        return -1;
+      }
+
       if (isPadding(d2)) {
         len = 1;
+        if ((expected_ver & ECOJI_VER_ONE_ONLY) != 0 && !isPadding(d3) &&
+            !isPadding(d4)) {
+          // saw ecoji ver1 so would expect full padding
+          return -1;
+        }
+
+        if ((expected_ver & ECOJI_VER_ONE_ONLY) == 0 && !isPadding(d3) &&
+            !isPadding(d4)) {
+
+          if (d4 != -1) {
+            if (push_back(infp, d4) == -1) {
+              return -1;
+            }
+          }
+          if (d3 != -1) {
+            if (push_back(infp, d3) == -1) {
+              return -1;
+            }
+          }
+        }
+
       } else if (isPadding(d3)) {
         len = 2;
+        if ((expected_ver & ECOJI_VER_ONE_ONLY) != 0 && !isPadding(d4)) {
+          // saw ecoji ver1 so would expect full padding
+          return -1;
+        }
+
+        if ((expected_ver & ECOJI_VER_ONE_ONLY) == 0 && !isPadding(d4)) {
+          if (d4 != -1) {
+            if (push_back(infp, d4) == -1) {
+              return -1;
+            }
+          }
+        }
       } else if (isPadding(d4)) {
         len = 3;
       } else if (isLastPadding(d4)) {
         len = 4;
+      } else {
+        return -1;
       }
     }
 
